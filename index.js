@@ -1,5 +1,5 @@
-var babylon = require('babylon');
-var vlq = require('vlq');
+var parser = require("@babel/parser");
+var vlq = require("vlq");
 
 /**
  * Given a string JavaScript source which contains Flow types, return a string
@@ -32,24 +32,47 @@ module.exports = function flowRemoveTypes(source, options) {
   }
 
   // If there's no @flow or @noflow flag, then expect no annotation.
-  var pragmaStart = source.indexOf('@' + 'flow');
+  var pragmaStart = source.indexOf("@" + "flow");
   var pragmaSize = 5;
   if (pragmaStart === -1) {
-    pragmaStart = source.indexOf('@' + 'noflow');
+    pragmaStart = source.indexOf("@" + "noflow");
     pragmaSize = 7;
     if (pragmaStart === -1 && !all) {
       return resultPrinter(options, source);
     }
   }
 
-  // Babylon is one of the sources of truth for Flow syntax. This parse
+  // babel parser is one of the sources of truth for Flow syntax. This parse
   // configuration is intended to be as permissive as possible.
-  var ast = babylon.parse(source, {
+  var ast = parser.parse(source, {
     allowImportExportEverywhere: true,
     allowReturnOutsideFunction: true,
     allowSuperOutsideMethod: true,
-    sourceType: 'module',
-    plugins: [ '*', 'jsx', 'flow' ],
+    sourceType: "module",
+    tokens: true,
+    plugins: [
+      "jsx",
+      "flow",
+      "estree",
+      "doExpressions",
+      "objectRestSpread",
+      "classProperties",
+      "classPrivateProperties",
+      "classPrivateMethods",
+      "exportDefaultFrom",
+      "exportNamespaceFrom",
+      "asyncGenerators",
+      "functionBind",
+      "functionSent",
+      "dynamicImport",
+      "numericSeparator",
+      "optionalChaining",
+      "importMeta",
+      "bigInt",
+      "optionalCatchBinding",
+      "throwExpressions",
+      "nullishCoalescingOperator"
+    ]
   });
 
   var removedNodes = [];
@@ -65,7 +88,7 @@ module.exports = function flowRemoveTypes(source, options) {
   if (pragmaStart !== -1) {
     var pragmaIdx = findTokenIndex(ast.tokens, pragmaStart);
     var pragmaType = ast.tokens[pragmaIdx].type;
-    if (pragmaType === 'CommentLine' || pragmaType === 'CommentBlock') {
+    if (pragmaType === "CommentLine" || pragmaType === "CommentBlock") {
       removedNodes.push(getPragmaNode(context, pragmaStart, pragmaSize));
     }
   }
@@ -74,19 +97,19 @@ module.exports = function flowRemoveTypes(source, options) {
   visit(ast, context, removeFlowVisitor);
 
   return resultPrinter(options, source, removedNodes);
-}
+};
 
 function resultPrinter(options, source, removedNodes) {
   // Options
   var pretty = Boolean(options && options.pretty);
 
   return {
-    toString: function () {
+    toString: function() {
       if (!removedNodes || removedNodes.length === 0) {
         return source;
       }
 
-      var result = '';
+      var result = "";
       var lastPos = 0;
 
       // Step through the removed nodes, building up the resulting string.
@@ -108,17 +131,17 @@ function resultPrinter(options, source, removedNodes) {
         }
       }
 
-      return result += source.slice(lastPos);
+      return (result += source.slice(lastPos));
     },
-    generateMap: function () {
+    generateMap: function() {
       return {
         version: 3,
-        sources: [ 'source.js' ],
+        sources: ["source.js"],
         names: [],
-        mappings: pretty ? generateSourceMappings(removedNodes) : ''
+        mappings: pretty ? generateSourceMappings(removedNodes) : ""
       };
     }
-  }
+  };
 }
 
 var LINE_RX = /(\r\n?|\n|\u2028|\u2029)/;
@@ -128,7 +151,7 @@ var LINE_RX = /(\r\n?|\n|\u2028|\u2029)/;
 var removeFlowVisitor = {
   DeclareClass: removeNode,
   DeclareFunction: removeNode,
-  DeclareInterface:removeNode,
+  DeclareInterface: removeNode,
   DeclareModule: removeNode,
   DeclareTypeAlias: removeNode,
   DeclareVariable: removeNode,
@@ -141,37 +164,37 @@ var removeFlowVisitor = {
   ClassDeclaration: removeImplementedInterfaces,
   ClassExpression: removeImplementedInterfaces,
 
-  Identifier: function (context, node, ast) {
+  Identifier: function(context, node, ast) {
     if (node.optional) {
       // Find the optional token.
       var idx = findTokenIndex(ast.tokens, node.start);
       do {
         idx++;
-      } while (ast.tokens[idx].type.label !== '?');
+      } while (ast.tokens[idx].type.label !== "?");
       removeNode(context, ast.tokens[idx]);
     }
   },
 
-  ClassProperty: function (context, node) {
+  ClassProperty: function(context, node) {
     if (!node.value) {
-      return removeNode(context, node)
-    }
-  },
-
-  ExportNamedDeclaration: function (context, node) {
-    if (node.exportKind === 'type' || node.exportKind === 'typeof') {
       return removeNode(context, node);
     }
   },
 
-  ImportDeclaration: function (context, node) {
-    if (node.importKind === 'type' || node.importKind === 'typeof') {
+  ExportNamedDeclaration: function(context, node) {
+    if (node.exportKind === "type" || node.exportKind === "typeof") {
+      return removeNode(context, node);
+    }
+  },
+
+  ImportDeclaration: function(context, node) {
+    if (node.importKind === "type" || node.importKind === "typeof") {
       return removeNode(context, node);
     }
   },
 
   ImportSpecifier: function(context, node) {
-    if (node.importKind === 'type' || node.importKind === 'typeof') {
+    if (node.importKind === "type" || node.importKind === "typeof") {
       removeNode(context, node);
 
       // Remove trailing comma
@@ -180,7 +203,7 @@ var removeFlowVisitor = {
       while (isComment(ast.tokens[idx])) {
         idx++;
       }
-      if (ast.tokens[idx].type.label === ',') {
+      if (ast.tokens[idx].type.label === ",") {
         removeNode(context, ast.tokens[idx]);
       }
       return false;
@@ -197,7 +220,7 @@ function removeImplementedInterfaces(context, node, ast) {
     var idx = findTokenIndex(ast.tokens, first.start);
     do {
       idx--;
-    } while (ast.tokens[idx].value !== 'implements');
+    } while (ast.tokens[idx].value !== "implements");
 
     var lastIdx = findTokenIndex(ast.tokens, last.start);
     do {
@@ -254,11 +277,11 @@ function getPragmaNode(context, start, size) {
   var column = 0;
   for (var position = 0; position < start; position++) {
     var char = source[position];
-    if (char === '\n') {
+    if (char === "\n") {
       line++;
       column = 0;
-    } else if (char === '\r') {
-      if (source[position + 1] === '\n') {
+    } else if (char === "\r") {
+      if (source[position + 1] === "\n") {
         position++;
       }
       line++;
@@ -272,8 +295,8 @@ function getPragmaNode(context, start, size) {
     end: start + size,
     loc: {
       start: { line: line, column: column },
-      end: { line: line, column: column + size },
-    },
+      end: { line: line, column: column + size }
+    }
   };
 }
 
@@ -281,7 +304,7 @@ function getLeadingSpaceNode(context, node) {
   var source = context.source;
   var end = node.start;
   var start = end;
-  while (source[start - 1] === ' ' || source[start - 1] === '\t') {
+  while (source[start - 1] === " " || source[start - 1] === "\t") {
     start--;
   }
   if (start !== end) {
@@ -297,13 +320,13 @@ function getTrailingLineNode(context, node) {
   var source = context.source;
   var start = node.end;
   var end = start;
-  while (source[end] === ' ' || source[end] === '\t') {
+  while (source[end] === " " || source[end] === "\t") {
     end++;
   }
 
   // Remove all space including the line break if this token was alone on the line.
-  if (source[end] === '\n' || source[end] === '\r') {
-    if (source[end] === '\r' && source[end + 1] === '\n') {
+  if (source[end] === "\n" || source[end] === "\r") {
+    if (source[end] === "\r" && source[end + 1] === "\n") {
       end++;
     }
     end++;
@@ -326,10 +349,12 @@ function isLastNodeRemovedFromLine(context, node) {
   var line = node.loc.end.line;
 
   // Find previous token that was not removed on the same line.
-  while (priorTokenIdx >= 0 &&
-         token.loc.end.line === line &&
-         isRemovedToken(context, token)) {
-    token = tokens[--priorTokenIdx]
+  while (
+    priorTokenIdx >= 0 &&
+    token.loc.end.line === line &&
+    isRemovedToken(context, token)
+  ) {
+    token = tokens[--priorTokenIdx];
   }
 
   // If there's no prior token (start of file), or the prior token is on another
@@ -384,7 +409,7 @@ function visit(ast, context, visitor) {
       stack = stack.prev;
     } else {
       var node = parent ? parent[keys[index]] : ast.program;
-      if (node && typeof node === 'object' && (node.type || node.length)) {
+      if (node && typeof node === "object" && (node.type || node.length)) {
         if (node.type) {
           var visitFn = visitor[node.type];
           if (visitFn && visitFn(context, node, ast) === false) {
@@ -407,7 +432,7 @@ function findTokenIndex(tokens, offset) {
   var max = tokens.length - 1;
 
   while (min <= max) {
-    var ptr = (min + max) / 2 | 0;
+    var ptr = ((min + max) / 2) | 0;
     var token = tokens[ptr];
     if (token.end <= offset) {
       min = ptr + 1;
@@ -423,13 +448,13 @@ function findTokenIndex(tokens, offset) {
 
 // True if the provided token is a comment.
 function isComment(token) {
-  return token.type === 'CommentBlock' || token.type === 'CommentLine';
+  return token.type === "CommentBlock" || token.type === "CommentLine";
 }
 
 // Produce a string full of space characters of a given size.
 function space(size) {
-  var sp = ' '
-  var result = '';
+  var sp = " ";
+  var result = "";
 
   for (;;) {
     if ((size & 1) === 1) {
@@ -447,8 +472,8 @@ function space(size) {
 // Generate a source map when *removing* nodes rather than replacing them
 // with spaces.
 function generateSourceMappings(removedNodes) {
-  var mappings = '';
-  if (!removedNodes || removedNodes.length === '') {
+  var mappings = "";
+  if (!removedNodes || removedNodes.length === "") {
     return mappings;
   }
 
@@ -460,19 +485,24 @@ function generateSourceMappings(removedNodes) {
     var columnDiff = start.column - end.column;
     if (lineDiff) {
       for (var l = 0; l !== lineDiff; l++) {
-        mappings += ';';
+        mappings += ";";
       }
-      mappings += vlq.encode([ start.column, 0, lineDiff, columnDiff ]);
+      mappings += vlq.encode([start.column, 0, lineDiff, columnDiff]);
     } else if (columnDiff) {
       if (i) {
-        mappings += ',';
+        mappings += ",";
       }
-      mappings += vlq.encode([ columnDiff, 0, lineDiff, columnDiff ]);
+      mappings += vlq.encode([columnDiff, 0, lineDiff, columnDiff]);
     }
 
     end = removedNodes[i].loc.end;
-    mappings += ',';
-    mappings += vlq.encode([ 0, 0, end.line - start.line, end.column - start.column ]);
+    mappings += ",";
+    mappings += vlq.encode([
+      0,
+      0,
+      end.line - start.line,
+      end.column - start.column
+    ]);
   }
 
   return mappings;
